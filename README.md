@@ -1,2 +1,2 @@
 # R_CursoUADE
-Técnicas de data mining en R
+Data mining techniques using R
