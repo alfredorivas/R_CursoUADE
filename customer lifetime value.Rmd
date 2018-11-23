@@ -1,0 +1,159 @@
+---
+title: "R Notebook"
+author: "Alfredo Rivas"
+output: html_notebook
+---
+
+# Customer Lifetime Value
+
+```{r}
+dfventas <- read.csv("R UADE/salesdata.csv")
+```
+```{r}
+str(dfventas)
+```
+```{r}
+library(dplyr)
+library(ggplot2)
+library(rms)
+library(corrplot)
+```
+
+
+```{r}
+dfventas %>%
+  select_if(is.numeric) %>%
+  select(-id) %>%
+  cor() %>%
+  corrplot()
+```
+
+```{r}
+ggplot(dfventas) +
+  geom_boxplot(aes(x=mostFreqStore, y=salesThisMon))
+```
+
+Modelo lineal simple:
+
+```{r}
+modeloSimple <- lm(salesThisMon ~ salesLast3Mon, data=dfventas)
+```
+```{r}
+summary(dfventas)
+```
+
+```{r}
+summary(modeloSimple)
+```
+
+```{r}
+modeloVentas1 <- lm(salesThisMon ~ . -id, data=dfventas)
+```
+
+Verificar factor de inflación de varianza
+
+```{r}
+vif(modeloVentas1)
+```
+
+
+```{r}
+modeloVentas1 <- lm(salesThisMon ~ . -id -preferredBrand -nBrands -nCats -nItems, data=dfventas)
+```
+
+```{r}
+vif(modeloVentas1)
+```
+
+```{r}
+summary(modeloVentas1)
+```
+
+Predicción de ventas
+
+```{r}
+dfventas2 <- read.csv("R UADE/salesdataMon2To4.csv")
+```
+
+```{r}
+predVentas5 <- predict(modeloVentas1,newdata = dfventas2)
+```
+
+```{r}
+mean(predVentas5)
+```
+
+Predije con esto cuánto voy a vender en el mes 5!
+
+#Prevención de *churn*
+(me interesa ver si un tipo volvió a comprar o no)
+
+```{r}
+dfchurn <- read.csv(("R UADE/churn_data.csv"))
+```
+
+```{r}
+str(dfchurn)
+```
+
+```{r}
+ggplot(dfchurn) +
+  geom_histogram(aes(x=returnCustomer), stat = "count")
+```
+
+```{r}
+modeloLogitFull <- glm(returnCustomer ~ title + newsletter + websiteDesign + paymentMethod + tvEquiment, family="binomial", data = dfchurn)
+```
+
+```{r}
+summary(modeloLogitFull)
+```
+
+```{r}
+coefsExp <- coef(modeloLogitFull) %>% exp() %>% round(2)
+print(coefsExp)
+```
+
+```{r}
+library(SDMtools)
+```
+
+```{r}
+library(SDMTools)
+```
+
+```{r}
+dfchurn$predNew <- predict(modeloLogitFull, type="response", na.action=na.exclude)
+```
+
+```{r}
+confmatrix <- confusion.matrix(dfchurn$returnCustomer, dfchurn$predNew, threshold = 0.5)
+```
+
+```{r}
+confmatrix
+```
+
+# CLUSTERING
+método "K means"
+
+```{r}
+proteina <- read.table("R UADE/protein.txt", sep="\t", header=TRUE)
+```
+
+```{r}
+var_pred <- colnames(proteina) [-1]
+```
+
+```{r}
+pmatriz <- scale(proteina[, var_pred])
+```
+
+```{r}
+pclusters <- kmeans(pmatriz, 5, nstart = 100, iter.max = 100)
+```
+
+```{r}
+summary(pclusters)
+```
+

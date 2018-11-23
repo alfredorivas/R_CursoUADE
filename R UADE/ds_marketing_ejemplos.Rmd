@@ -1,0 +1,1126 @@
+---
+title: "Ejemplos de Data Science aplicado al Marketing"
+author: "Data Science y Marketing Digital"
+output:
+    pdf_document:
+        latex_engine: xelatex
+        highlight: default
+fontsize: 11pt
+urlcolor: blue
+---
+
+En este documento mostraremos diversos casos de aplicación al marketing de
+métodos de ciencia de datos, utilizando en particular el lenguaje de
+programación R. 
+
+
+# Requisitos
+
+Para poder hacer los ejemplos en este documento, es necesario en primer lugar
+tener el lenguaje de programación R instalado. R es tanto un lenguaje como un
+entorno para la computación estadística. R es código abierto, extensible y
+funciona tanto en Windows como en Mac o Linux. Es capaz de realizar una gran
+variedad de cálculos estadísticos, gráficos y métodos de machine learning, desde
+lo básico a lo avanzado.
+
+Correr programas en R es mucho más sencillo usando RStudio, un entorno integrado
+de desarrollo (IDE, por sus siglas en inglés) que funciona como una interfaz por
+encima de R facilitando la interacción con el usuario. RStudio provee, entre
+otras capacidades, un editor de código fuente, una consola de R (un *intérprete*
+en donde se pueden correr comandos de R de a uno a la vez), un sistema para
+examinar variables y objetos creados por R, y visores para archivos y gráficos.
+La versión desktop de RStudio es de código abierto, y es probablemente el más
+popular de los IDEs para R. Un instructivo para instalar tanto R como RStudio
+está disponible en la siguiente página web:
+http://www.tomasenrique.tech/post/es/instalar-r-rstudio/.
+
+
+## Paquetes adicionales
+
+La instalación base de R provee una cierta cantidad de funciones de base (por 
+ejemplo, estadística descriptiva, gráficos simples). Además, R tiene una
+comunidad muy activa de desarrolladores que ha creado una gran cantidad de
+**paquetes** que proveen funciones útiles para, por ejemplo, resolver
+determinados tipos de problemas o crear gráficos más sofisticados. En
+particular, para los ejemplos en este documento usaremos los siguientes
+paquetes: `dplyr` y `reshape2` (funciones para manipular datos), `ggplot2`
+(gráficos), `rms` (funciones para ajustar modelos), `corrplot` (para ver
+correlaciones entre variables), `MASS` (diversas funciones estadísticas) y
+`SDMTools` (de éste vamos a usar una función en particular para calcular
+matrices de confusión).
+
+Instalar un paquete en R es muy sencillo: se usa el comando `install.packages()`
+en la consola de R (suele estar abajo a la izquierda en RStudio), pasándole como
+argumento el nombre del paquete a instalar entre comillas. Por ejemplo, para
+instalar `dplyr` ejecutar lo siguiente:
+
+``` {r, eval=FALSE}
+install.packages("dplyr")
+```
+> *Nota: se requiere conexión a Internet ya que RStudio necesita descargar los*
+> *paquetes desde un servidor externo.*
+
+Una vez instalados, es necesario indicar en el programa cuáles paquetes se van a
+usar, mediante el comando `library()`. El siguiente bloque de código se encarga
+de esto:
+
+```{r, warning=FALSE, message=FALSE}
+library(MASS)
+library(reshape2)
+library(dplyr)
+library(ggplot2)
+library(rms)
+library(corrplot)
+library(SDMTools)
+```
+
+Pasemos ahora a considerar el primer caso de aplicación.
+
+
+# Customer Lifetime Value
+
+En marketing, el **valor de tiempo de vida del cliente**, abreviado como CLV
+(sigla de su nombre en inglés, *customer lifetime value*) considera el valor de
+un cliente en la relación que mantiene con la compañía a lo largo del tiempo,
+por ejemplo calculando la ganancia neta futura. El CLV es una predicción, por lo
+que su determinación es una aplicación de ciencia de datos. Calculando el CLV
+podemos priorizar determinados clientes según los márgenes futuros que nuestro
+modelo prediga.
+
+Nos interesa determinar es la ganancia neta a futuro, para lo cual buscamos
+identificar cuáles son las variables en los datos históricos que tienen
+influencia sobre la misma. Aquí hay un detalle a tener en cuenta: buscamos
+predecir un valor en el futuro con datos disponibles en el presente. Entonces,
+cuando construyamos el modelo predictivo tenemos que asegurarnos de que si la
+variable a predecir o **variable objetivo** corresponde a un cierto tiempo $t$
+(el mes o el año que viene, por ejemplo), entonces las **variables predictoras**
+o simplemente **predictores** deben corresponder a un tiempo $t - \Delta t$ (el
+corriente mes o año).
+
+Si por ejemplo queremos un modelo que calcule el CLV para el año que viene,
+deberíamos disponer de datos de ganancia neta para el corriente año y datos de
+los predictores en el año pasado. Una vez construido el modelo predictivo,
+usaremos los datos de los mismos predictores en este año para predecir lo que
+sucederá el año que viene. Se trata, por lo tanto, de un problema del tipo de
+**aprendizaje supervisado**.
+
+
+## Datos
+
+Los datos que usaremos para este ejercicio están contenidos en un archivo
+llamado `salesData.csv` ubicado en un subdirectorio llamado `data`. Estos datos
+están en el formato denominado CSV, sigla en inglés de *comma separated values*;
+cada fila en el archivo es una entrada de datos, y los datos correspondientes a
+distintas columnas están separados entre sí por comas. La primera fila suele ser
+un encabezado que indica los nombres de las columnas. Los archivos CSV son
+archivos de texto, por lo cual pueden examinarse con un procesador de texto o
+con una planilla de cálculo (también se pueden examinar directamente desde
+RStudio).
+
+En R cargar datos en formato CSV es muy sencillo. Se realiza con el siguiente
+comando:
+
+```{r}
+dfventas <- read.csv("data/salesData.csv")
+```
+
+El operador `<-`, una "flecha", es el *operador de asignación* en R. A la linea
+de código de arriba se la puede pensar de la siguiente forma: "tomar lo que está
+a la derecha y asignarlo a (o guardarlo en) el objeto que está a la izquierda".
+En este caso concreto, estamos tomando los datos almacenados en el archivo y los
+guardamos dentro de un objeto de R del tipo **dataframe**. Un dataframe puede
+pensarse como si fuese una planilla de cálculo: guarda datos en filas y
+columnas, y es capaz de almacenar datos de distinto tipo. Por ejemplo, una
+columna puede contener números (un precio, por ejemplo) y otra columna puede
+contener texto (e.g. nombres de personas).
+
+
+## Exploración de los datos
+
+Hay varios comandos útiles en R para poder revisar datos. En primer lugar,
+`str()` nos muestra la estructura de los datos en un dataframe:
+
+```{r}
+str(dfventas)
+```
+
+De la salida de este comando podemos ver varias cosas: primero, que tenemos 5122
+observaciones (filas) de 14 variables (columnas). Una de ellas, `salesThisMon`
+(ventas del corriente mes) es la variable objetivo, y las demás serán los
+predictores. Además, para cada variable podemos ver de qué tipo es y tenemos una
+vista previa de algunos valores. Por ejemplo, `nItems` o `meanItemPrice` son
+valores numéricos mientras que `mostFreqStore` o `preferredBrand` son variables 
+categóricas, indicadas como de tipo "Factor"; nótese que también se indica el
+número de niveles posibles en cada una.
+
+La función `summary()` nos permite obtener algunas estadísticas básicas de los
+datos:
+
+```{r}
+summary(dfventas)
+```
+
+Para cada columna que contenga valores numéricos, `summary()` devuelve los
+valores mínimo y máximo, el promedio, la mediana y los cuartiles primero y
+tercero; mientras que para las variables categóricas devuelve la cantidad de
+valores en cada categoría. Todo esto es sumamente útil para hacernos una primera
+idea de la información contenida en los datos.
+
+Una vez hecha la exploración inicial de los datos, veamos si hay correlaciones
+entre las distintas variables. Para ello calculamos la matriz de
+**coeficientes de correlación** mediante la función `cor()`, y luego
+visualizamos los resultados con la función `corrplot()`, que nos provee una
+visualización de dicha matriz tipo "mapa de calor". Esto nos da una imagen más
+clara de la situación que mirar una tabla de números. Tengamos en cuenta que una
+*correlación positiva* entre dos variables $x_1$ y $x_2$ quiere decir que cuando
+una aumenta, la otra también; y si la correlación es *negativa*, entonces cuando
+una aumenta, la otra disminuye.
+
+Los coeficientes de correlación toman valores entre -1 y 1; 1 indica una
+correlación perfecta (o -1 en el caso que la correlación sea negativa), mientras
+que valores cercanos a 0 corresponden a poca o ninguna correlación entre las
+variables.
+
+En el siguiente bloque de código las líneas que empiezan con el caracter `#` son
+**comentarios**. Esas líneas de código no se ejecutan, y sirven para documentar
+lo que sucede.
+
+```{r}
+# Del dataframe que contiene los datos, seleccionamos solamente las columnas
+# que contienen valores numéricos
+dfventas_num <- select_if(dfventas, is.numeric)
+
+# Sacamos la columna id, que no nos interesa ya que sólo contiene un ID
+dfventas_num <- select(dfventas_num, -id)
+
+# Calculamos la matriz de coeficientes de correlación
+ventas_cc <- cor(dfventas_num)
+
+# Visualizamos la matriz de correlaciones
+corrplot(ventas_cc)
+```
+
+Este tipo de gráfico es sumamente útil para realizar lo que se conoce como 
+**selección de predictores** (*feature selection*). Recordemos que lo que 
+queremos predecir es `salesThisMon`; entonces, le daremos (en principio) mayor
+importancia a predictores que tengan mucha correlación con dicha variable, y
+probablemente ignoremos aquellos que tengan poca correlación.
+
+Por ejemplo, las ventas este mes tienen mucha correlación positiva con las
+ventas en los últimos 3 meses, el número de marcas diferentes compradas
+(`nBrands`) o la antiguedad del cliente (`customerDuration`). Otras variables
+como el tiempo desde la última compra (`daysSinceLastPurch`) o el precio
+promedio de los artículos (`meanItemPrice`) tienen correlación negativa con la
+variable objetivo.
+
+Lo anterior nos sirvió para variables numéricas; para variables categóricas, un
+gráfico útil es lo que se denomina *boxplot* o **diagrama de caja**. Esto nos
+permite ver la distribución de valores de la variable objetivo para distintos
+niveles del predictor categórico. Para graficar usaremos el paquete `ggplot2`,
+que permite realizar gráficos mucho más complejos y elegantes que las funciones
+de R base. En `ggplot2` los gráficos se construyen siguiendo una metodología
+conocida como **gramática de gráficos** (*grammar of graphics*): cada elemento
+del gráfico (los ejes, los puntos de datos, los títulos etc) se va "sumando" al
+gráfico base a manera de capas. En este caso, agregamos una única capa que crea
+un boxplot sumando `geom_boxplot()` a la capa base creada por la función
+`ggplot()` a partir de los datos. Para indicar cuáles columnas del dataframe
+queremos que se incluyan en el gráfico, le pasamos a la capa correspondiente las
+columnas deseadas dentro de la función `aes()` (abreviatura de *aesthetics*,
+estética).
+
+```{r}
+ggplot(dfventas) +
+    geom_boxplot(aes(x=mostFreqStore, y=salesThisMon))
+```
+
+En un boxplot la caja central de cada nivel se extiende desde el primer cuartil
+(25% de los datos) hasta el tercer cuartil (75% de los datos), y la línea
+central de cada caja indica la mediana. Los puntos arriba y abajo son
+**valores atípicos** (*outliers*). Del gráfico de arriba vemos que las ventas en
+los distintos locales donde los clientes compran con mayor frequencia tienen una
+distribución similar, con la excepción del local de Stockton (el de más a la
+derecha).
+
+Podemos hacer lo mismo para la marca preferida por el cliente:
+
+```{r}
+ggplot(dfventas) +
+    geom_boxplot(aes(x=preferredBrand, y=salesThisMon))
+```
+
+Para este otro predictor se observa más variabilidad. De estos dos gráficos
+podemos concluir que `mostFreqStore` parecería en principio no ser muy útil como
+predictor, ya que la distribución de ventas es más o menos la misma en casi
+todos los locales. En cambio, para distintas marcas preferidas se observan
+distintas distribuciones de ventas. Esto indica que *potencialmente* la variable
+`preferredBrand` sería un predictor útil.
+
+
+## Modelo lineal simple
+
+Dentro de los problemas de aprendizaje supervisado, el caso de predecir el CLV
+es lo que se denomina un **problema de scoring**, ya que buscamos predecir un
+valor numérico. Para este tipo de problema uno de los modelos más simples que
+podemos construir es una **regresión lineal simple**: intentaremos describir la
+variable objetivo $y$ en términos de un único predictor $x$ en la forma de un
+modelo lineal, una recta de ecuación
+
+$$y = a x + b$$
+
+*Construir* o *entrenar* el modelo es encontrar los valores de los
+**coeficientes** que describen al mismo (en este caso, $a$ y $b$) que mejor
+"ajusten" a los datos que tenemos. ¿Cómo se define este "mejor ajuste" en
+machine learning? Definiendo algún tipo de **función de costo**, que tendremos
+que minimizar. En el caso de una regresión lineal la "mejor" recta se encuentra
+por el método de **mínimos cuadrados**. Como queremos que la recta pase lo más
+cerca posible de los puntos de datos que tenemos, el "mínimo costo" para este
+caso corresponde a que la suma de las distancias entre los datos y la recta del
+modelo (lo que se denomina los **residuos** del modelo) sea lo menor posible.
+Estas distancias se elevan al cuadrado antes de sumar, de modo que sean todas
+positivas y así evitar que distancias positivas y negativas (puntos por arriba o
+por abajo de la recta) se cancelen entre sí por simple casualidad.
+
+Aún en análisis más sofisticados es útil construir modelos con una única
+variable predictora, ya que estos modelos simples no sólo nos pueden ayudar a
+explorar propiedades de los datos, sino que también pueden funcionar como un
+"modelo de referencia" o "modelo mínimo", con el cual podemos comparar a nuestro
+modelo más sofisticado para darnos una idea sobre si está funcionando bien o no.
+
+Los modelos lineales son muy versátiles, pero sólo son válidos si se cumplen una
+serie de condiciones.
+
+- La relación entre la variable objetivo $y$ y los predictores $x_1$, $x_2$ etc.
+es por lo menos aproximadamente lineal.
+- El error de medición de los predictores $x$ no es importante.
+- Los errores son independientes unos de otros.
+- El valor medio de los errores de predicción es 0.
+- La varianza (dispersión) de los errores de predicción es constante; esto es,
+no depende del valor de los predictores.
+- La distribución de los errores es gaussiana.
+
+Vimos anteriormente que las ventas en el corriente mes tienen una fuerte
+correlación con las ventas en los últimos 3 meses, así que ajustaremos un modelo
+lineal usando `salesLast3Mon` como único predictor. En R ajustar un modelo
+lineal es muy sencillo, se hace usando la función `lm()` (por *linear model*)
+del paquete `stats`, disponible en la instalación base. Hay que pasarle como
+mínimo dos argumentos: una **fórmula** que es de la forma
+
+$$\text{(Variable objetivo)} \sim \text{(Predictor 1)} + \text{(Predictor 2)} + \dots$$
+
+que se lee de la siguiente manera: "predecir la variable objetivo *en función del*
+predictor 1, predictor 2, etc". El segundo argumento que hay que pasar es el
+nombre del dataframe que contiene los datos del problema. La siguiente línea de
+código crea un modelo lineal y lo guarda dentro de `modeloSimple`:
+
+```{r}
+modeloSimple <- lm(salesThisMon ~ salesLast3Mon, data=dfventas)
+```
+
+Podemos usar la función `summary()` para obtener información sobre el modelo 
+resultante.
+
+```{r}
+summary(modeloSimple)
+```
+
+En la salida, en primer lugar vemos que se repite la llamada a la función con la
+que se construyó el modelo; esto se hace para control. Luego se muestran unas
+estadísticas básicas sobre los residuos, después aparecen los coeficientes del
+modelo: `Estimate` indica el mejor valor hallado para los mismos, con un error
+dado por `Error`. En general podemos ignorar al `Intercept`.
+
+Una característica útil de los modelos lineales es que los coeficientes de los
+mismos tienen una interpretación directa: para un modelo de la forma
+$y = a x + b$, cuando $x$ aumenta en una unidad el valor de $y$ aumenta en $a$.
+En este caso, el modelo simple indica que cuando las ventas en los últimos 3
+meses aumentan en \$1, las ventas este mes aumentarán \$0,38.
+
+Otra medida de utilidad que aparece listada es el $R^2$. Esta medida indica,
+aproximadamente, qué fracción de la variación en los datos es explicada por
+nuestro modelo. El $R^2$ es un número que puede valer entre 0 (el modelo no
+explica nada de los datos) y 1 (el modelo explica los datos perfectamente). En
+este ejemplo, vemos que aproximadamente un 60% de la variación en las ventas del
+corriente mes se puede explicar considerando únicamente como predictor las
+ventas en los últimos 3 meses.
+
+
+## Regresión lineal múltiple
+
+Un modelo simple puede parecer bastante bueno, pero se corre el riesgo de tener
+un sesgo o un resultado incorrecto por lo que se conoce como *omitted variable
+bias*: cuando una variable que no está incluída en el modelo está correlacionada
+tanto con el predictor como con la variable objetivo. Recordar el ejemplo visto 
+en la clase anterior de la cantidad de errores versus la carga de trabajo, donde
+la variable oculta era que había dos inspectores distintos con diferentes
+niveles de experiencia. Para evitar este tipo de problemas, en general nos
+interesa considerar modelos con múltiples predictores.
+
+Vamos entonces a crear un modelo usando todos los predictores disponibles. En
+este caso usaremos todo excepto la columna `id`, que es sólo una etiqueta. Por
+suerte, para armar la fórmula no es necesario escribir a mano todos los nombres
+de columnas: se puede usar la fórmula `y ~ .` como abreviatura de "predecir $y$
+en función de todas las columnas disponibles". Y para no incluir alguna de las
+columnas, se la puede excluir explícitamente anotándola en la fórmula pero
+precedida de un signo "-" (menos).
+
+```{r}
+# Predecir salesThisMon en función de todo lo disponible, excepto la columna id
+modeloVentas1 <- lm(salesThisMon ~ . - id, data=dfventas)
+```
+
+Como tenemos muchos más predictores, la salida de `summary()` es ahora más
+extensa:
+
+```{r}
+summary(modeloVentas1)
+```
+
+La información que tenemos es la misma que en el caso anterior del modelo
+simple, pero hay algunas características de este nuevo reporte que hay que
+explicar. En primer lugar, consideremos los asteriscos que aparecen en el
+extremo derecho de cada fila. Básicamente, estos asteriscos tienen que ver con
+el valor de la columna `Pr(>|t|)` y nos indican la "utilidad" del predictor
+correspondiente. Uno, dos o tres asteriscos (`*`), corresponden a un valor de
+`Pr(>|t|)` menor a 0,05 e indican un predictor útil, mientras que si aparece un
+punto (`.`) o no aparece nada entonces ese predictor no tiene mucho valor como
+explicación de la variación en la variable objetivo.
+
+En segundo lugar observamos que los predictores categóricos aparecen muchas
+veces. Esto tiene que ver con la cantidad de niveles que hay en cada categoría.
+Por ejemplo, `preferredBrand` tiene 10 niveles posibles (Akar, Alekto, Bo,
+Katram, Kellest, Medeia, Moone, Nilima, Tanvi y Veina) y aparece 9 veces, en
+cada fila con el nombre del nivel agregado al final. Con una excepción: el
+primer nivel no aparece (`preferredBrandAkar`). Esto tiene que ver con cómo se
+interpretan los coeficientes para variables categóricas, lo que explicamos a
+continuación.
+
+En un modelo lineal múltiple, el coeficiente $a_i$ de un predictor $x_i$
+numérico se interpreta de la siguiente manera: cuando $x_i$ aumenta en una
+unidad, *manteniendo todos los otros predictores constantes*, entonces la
+variable objetivo $y$ aumenta $a_i$. Ahora bien, si $x_i$ es una variable
+**categórica** que puede tomar valores de una lista ($A$, $B$, $C$ y $D$, por 
+ejemplo), uno de los niveles se toma como **referencia** y no aparece en la
+lista. Los coeficientes para los otros niveles se miden con respecto a este
+nivel. Entonces, si el nivel de referencia es $A$, el coeficiente $a_i$ que
+acompaña a $x_i \, B$ quiere decir que cuando $x_i$ toma el valor $B$,
+*manteniendo todos los otros predictores constantes*, entonces $y$ aumenta en
+$a_i$ *respecto al valor que tendría si* $x_i$ *hubiese tomado el valor* $A$.
+
+En este ejemplo el coeficiente de `preferredBrandMoone` es -41,7; esto quiere
+decir que cuando la marca preferida es Moone, las ventas este mes serán \$41,7
+menos que si la marca favorita hubiese sido la de referencia, Akar.
+
+El $R^2$ de este modelo nos indica que el mismo explica un 82% de la variación
+en las ventas de este mes. Sin embargo, hay que tener cuidado con la
+**multicolinealidad**: si algunas de las variables predictoras están muy 
+correlacionadas entre sí, los coeficientes de un modelo lineal pueden volverse
+inestables y los errores pueden quedar subestimados. El riesgo de tener
+predictores colineales aumenta a medida que agrego más de ellos, ya que es
+posible que no me de cuenta de que existe algún tipo de colinealidad en mis
+datos.
+
+Para controlar si esto sucede o no, lo que se puede hacer es calcular los
+**factores de inflación de varianza** (*variance inflation factors*, VIF). Éstos
+nos indican el aumento en la varianza, por culpa de la multicolinealidad, de un
+coeficiente estimado.
+
+```{r}
+# Verificar los factores de inflación de varianza
+vif(modeloVentas1)
+```
+
+La regla práctica es que valores superiores a 5 son problemáticos, y valores de
+10 o más indican coeficientes cuya estimación no es confiable. En este caso
+`nItems`, `nBrands` y varios de los niveles de `preferredBrand` tienen valores
+inaceptables, por lo que deberíamos eliminar dichos predictores de nuestro
+modelo para evitar los problemas debidos a multicolinealidad.
+
+Intentemos con un nuevo modelo sin las variables problemáticas:
+
+```{r}
+modeloVentas2 <- lm(salesThisMon ~ . - id - preferredBrand - nItems - nBrands,
+                    data=dfventas)
+```
+
+Controlemos los VIFs, para ver que ninguno sea mayor a 10 ahora:
+
+```{r}
+vif(modeloVentas2)
+```
+
+Veamos la información sobre este nuevo modelo.
+
+```{r}
+summary(modeloVentas2)
+```
+
+Vemos entonces que este modelo explica un 82% de la variación en las ventas del
+presente mes, igual que el anterior, pero sin el problema de inflación de
+varianza por multicolinealidad.
+
+
+### Usar el modelo para predecir
+
+Para predecir las ventas futuras vamos a usar los datos del archivo
+`salesDataMon2To4.csv` en el directorio `data`, que contiene información sobre
+las ventas en los meses 2, 3 y 4, que usaremos para predecir las ventas en el
+quinto mes del año. Primero cargamos los datos dentro de un nuevo dataframe:
+
+```{r}
+dfventas2a4 <- read.csv("data/salesDataMon2To4.csv")
+```
+
+La función que se usa para obtener predicciones se llama, justamente,
+`predict()`. Hay que pasarle como argumentos un modelo (vamos a usar
+`modeloVentas2`) y un conjunto de datos a usar como predictores, `dfventas2a4`
+en este caso.
+
+```{r}
+# Predecir las ventas en el mes 5
+predVentas5 <- predict(modeloVentas2, newdata=dfventas2a4)
+```
+
+La salida de `predict()` es un vector que contiene una predicción de las ventas
+futuras para cada fila de datos en los datos de entrada. Por ejemplo, puedo 
+calcular las ventas futuras promedio aplicando la función `mean()` a ese vector:
+
+```{r}
+# Ventas futuras promedio
+mean(predVentas5)
+```
+
+
+# Prevenir Pérdida de Clientes en Marketing Online
+
+Otro problema de interés es prevenir la pérdida de clientes (en inglés,
+*customer churn*). Ganar nuevos clientes es más costoso que mantener los
+clientes existentes; sin embargo, en muchas ocasiones recién nos damos cuenta
+que perdimos un cliente cuando el mismo nos contacta para dar de baja el
+servicio. Nos gustaría poder predecir con anticipación cuándo un cliente está
+insatisfecho de manera de poder realizar algún tipo de acción para retenerlo,
+por ejemplo ofrecerle una promoción o descuento.
+
+Este tipo de problema también es un ejemplo de aprendizaje supervisado ya que
+entrenaremos un modelo a partir de una base de datos de clientes cuyo estado de
+alta o baja ya es conocido. A estos problemas se los conoce como
+**problemas de clasificación**, en particular **clasificación binaria**, ya que
+tenemos dos categorías posibles. Hay varios algoritmos que sirven para problemas
+de clasificación, por ejemplo árboles de decisión o redes neuronales. En este
+ejemplo usaremos un tipo de modelo, relacionado con la regresión lineal,
+denominado **regresión logística**. La regresión logística suele ser una buena
+primera elección para un amplio rango de problemas de clasificación.
+
+En este ejemplo buscamos modelar la probabilidad de que un cliente vuelva a 
+realizar una compra en un sitio de e-commerce. Desafortunadamente, no es fácil
+modelar esta probabilidad directamente. Lo que se puede modelar es el logaritmo
+de lo que se denomina la **razón de oportunidades** (*odds ratio*), que es el
+cociente entre la probabilidad de que el cliente vuelva al sitio a comprar,
+$P(y=1)$, y la probabilidad de que no vuelva, $P(y=0)$:
+
+$$\log \frac{P(y=1)}{P(y=0)} = a_0 + a_1 x_1 + a_2 x_2 + \dots$$
+
+Esta forma funcional (una variante de lo que se conoce como
+**modelo lineal generalizado**) hace que la interpretación de los coeficientes
+en una regresión logística sea un tanto más complicada que en el caso de la
+regresión lineal, como veremos más adelante.
+
+Para este ejemplo usaremos los datos contenidos en el archivo `churn_data.csv`
+en el directorio `data`. Corresponden a ventas en un sitio de e-commerce.
+
+```{r}
+dfchurn <- read.csv("data/churn_data.csv")
+```
+
+Como en el ejemplo anterior, podemos usar los comandos `str()` y `summary()`
+para ver la estructura y estadísticas básicas de los datos, respectivamente.
+
+```{r}
+str(dfchurn)
+```
+
+Algunas de las variables como `couponDiscount` o `newsletter` solamente toman
+valores 0 o 1, indicando si por ejemplo el cliente usó un cupón de descuento en
+la compra o si recibe un newsletter de nuestro sitio.
+
+```{r}
+summary(dfchurn)
+```
+
+En el caso de los problemas de clasificación un punto importante es ver la
+distribución de las distintas clases de la variable objetivo. En este ejemplo
+la variable objetivo es `returnCustomer`, que vale "0" si el cliente nunca
+vuelve a comprar en el sitio y "1" cuando sí lo hace. Es importante ver si
+alguno de los casos es mucho más frecuente que el otro, ya que de ser así el
+modelo resultante tendrá problemas con la predicción de la clase menos
+frecuente (tiene muchos menos ejemplos de donde aprender para ese caso).
+
+```{r, warning=FALSE}
+# Analizar si la variable objetivo está balanceada o no
+ggplot(dfchurn) +
+    geom_histogram(aes(x=returnCustomer), stat="count")
+```
+
+El histograma nos muestra que, efectivamente, hay un desbalance entre las
+clases: la gran mayoría de los compradores no han vuelto a realizar compras en
+el sitio.
+
+
+## Construcción del modelo
+
+En R una regresión logística se construye usando la función `glm()` (por
+*generalized linear model*) especificando, además de la fórmula y los datos,
+que el modelo debe ser del tipo `family=binomial` (esto es porque hay muchos
+modelos lineales generalizados posibles, y la regresión logística se selecciona
+con esta opción). Construimos en primer lugar un modelo con todos los
+predictores disponibles, excepto las etiquetas y la fecha de compra:
+
+```{r}
+modeloLogitFull <- glm(returnCustomer ~ . - X - ID - orderDate, data=dfchurn,
+                       family=binomial)
+```
+
+Examinemos el modelo usando `summary()`.
+
+```{r}
+summary(modeloLogitFull)
+```
+
+La salida es muy similar a la de la regresión lineal, con algunas diferencias
+(por ejemplo, se menciona "deviance" en lugar de residuos - esto es algo similar
+para el caso de la regresión logística, tiene que ver con la "función de costo"
+utilizada).
+
+Como mencionamos antes, la interpretación de los coeficientes es más compleja
+en este tipo de modelo. Lo que los coeficientes indican es el efecto de una
+variación de los predictores sobre el logaritmo de la razón de oportunidades, lo
+que es difícil de traducir en una decisión. Para interpretar, primero se puede
+aplicar la función exponencial (la inversa del logaritmo).
+
+```{r}
+# La funcion coef() extrae los valores de los coeficientes del modelo
+coefsExp <- coef(modeloLogitFull)
+
+# Aplicamos la exponencial para sacarnos de encima el logaritmo
+coefsExp <- exp(coefsExp)
+
+# Redondeamos a 2 decimales
+coefsExp <- round(coefsExp, 2)
+```
+
+```{r}
+print(coefsExp)
+```
+
+Una vez hecho lo anterior, el resultado se interpreta de la siguiente manera.
+Por ejemplo, el coeficiente para `newsletter` es 1.68; esto indica que si el
+cliente recibe un newsletter, la razón de oportunidades (que, recordemos, es el
+cociente entre la probabilidad de que vuelva a comprar y la probabilidad de que
+no lo haga) aumenta en un factor 1,68, o sea, **se multiplica por 1,68**.
+
+
+## Elección de variables
+
+Hacia el final de la salida de `summary()` vemos mencionada una cantidad
+denominada AIC, sigla de *Akaike information criterion*. El AIC es un estimador
+de la calidad relativa de un modelo dado un conjunto de datos. Sin entrar en
+mucho detalle, el AIC tiene que ver con la cantidad de "pérdida de información"
+de un modelo. Dados varios modelos para un mismo conjunto de datos, el mejor
+modelo será que tenga menor valor de AIC, ya que es el que contiene "mayor
+información".
+
+En el modelo anterior algunos de los predictores no son significativos. Para
+buscar un mejor modelo (siguiendo con la regresión logística) podemos ir
+probando distintas combinaciones de predictores hasta encontrar cuál es el
+mejor modelo. Esto puede ser sumamente tedioso, pero por suerte hay funciones
+que permiten hacer esto automáticamente, por ejemplo `stepAIC()` del paquete
+`MASS`. A esta función se le pasa un modelo y nos devuelve un modelo reducido,
+optimizado por el valor de AIC según el proceso denominado
+*stepwise model selection*. Como la función prueba un cierto número de
+combinaciones de predictores, el proceso puede tardar un rato en completarse.
+
+```{r}
+# El argumento trace=0 es para que no imprima pasos intermedios
+modeloLogitNuevo <- stepAIC(modeloLogitFull, trace=0)
+```
+
+Veamos qué modelo nos queda:
+
+```{r}
+summary(modeloLogitNuevo)
+```
+
+El método ha eliminado, de la lista de predictores, a `giftwrapping`,
+`throughAffiliate`, `prodOthers` y `tvEquiment`.
+
+Una vez realizado este proceso, no hay que olvidar que el modelo resultante
+también tiene que ser considerado desde un punto de vista de negocio. Basándose
+en la experiencia:
+
+- ¿Tiene sentido considerar los predictores seleccionados?
+- ¿Se ha eliminado algo que se sabe que es importante?
+- ¿Hay alguna incoherencia en las predicciones del modelo?
+
+
+## Predicciones y métricas
+
+Igual que en el ejemplo anterior, usamos la función `predict()` para obtener
+predicciones con el modelo que hemos construido. La diferencia con el caso
+anterior es que, para el caso de clasificación con regresión logística, tenemos
+que pasar un parámetro adicional (`type="response"`).
+
+En este caso, vamos a agregar las predicciones como una nueva columna del 
+dataframe que contiene los datos. En R se puede usar el operador `\$` para
+acceder directamente a una columna de un dataframe: por ejemplo,
+`dfchurn$newsletter` me devuelve únicamente la columna `newsletter` del
+dataframe `dfchurn`. Y si queremos crear una nueva columna llamada `predNuevo`
+que contenga los resultados de las predicciones, simplemente le asignamos esos
+resultados a `dfchurn$predNuevo`, como muestra la línea de código de abajo:
+
+```{r}
+# El parámetro na.action=na.exclude se agrega para indicar a predict que ignore
+# las filas que tienen valores incompletos (que en R se indican como 'NA')
+dfchurn$predNuevo <- predict(modeloLogitNuevo, type="response",
+                             na.action=na.exclude, data=dfchurn)
+```
+
+Para ver las predicciones versus el valor de la variable objetivo, la siguiente
+línea de código selecciona esas dos columnas y luego muestra las últimas 6
+filas, via la función `tail()`.
+
+```{r}
+tail(select(dfchurn, returnCustomer, predNuevo))
+```
+
+Vemos aquí que las predicciones son un puntaje, en lugar de ceros o unos. Para
+convertirlos en predicciones de categorías hay que elegir un **umbral** de 
+decisión: si el puntaje es mayor al umbral pertenece a una de las categorías, y
+si es menor pertenece a la otra. La elección por defecto es 0,5 (50 por ciento),
+pero el valor del umbral puede ajustarse para obtener una mejor performance del
+modelo.
+
+Veamos cómo queda la matriz de confusión:
+
+```{r}
+# Crear la matriz de confusión. Hay que pasar como argumentos:
+# valores observados, predicciones, y valor del umbral
+matrizConf <- confusion.matrix(dfchurn$returnCustomer, dfchurn$predNuevo,
+                               threshold=0.5)
+print(matrizConf)
+```
+
+Recordemos que en los datos la clase "0" (clientes que no vuelven a comprar en
+el sitio) era la mayoritaria. Podemos ver aquí el problema antes mencionado que
+suelen tener modelos de clasificación entrenados a partir de datos
+desbalanceados: son muy buenos para predecir la clase mayoritaria, pero suelen
+cometer muchos errores en la clase minoritaria (predice muchos "0" que deberían
+ser "1"). Una forma de resolver esto es aplicar técnicas de **sobremuestreo**
+(*oversampling*) para intentar obtener muestras de datos más balanceadas.
+
+Calculemos algunas métricas, en primer lugar la **precisión**. Recordemos que 
+esto indica qué tan frecuentemente el modelo encuentra la clase positiva ("1"
+en este caso).
+
+```{r}
+prec <- matrizConf[4] / (matrizConf[2]+matrizConf[4])
+print(prec)
+```
+
+El modelo tiene aproximadamente un 40% de precisión. Calculemos ahora la
+**exhaustividad** (*recall*), que indica la utilidad del modelo (qué fracción
+del total de casos positivos es capaz de encontrar).
+
+```{r}
+rec <- matrizConf[4] / (matrizConf[3] + matrizConf[4])
+print(rec)
+```
+
+En términos del recall, el modelo es muy pobre: ¡menos de un 0,4%! En principio,
+habría que ajustar parámetros del modelo para intentar mejorar su performance.
+Sin embargo, hay que tener en cuenta que la importancia relativa de la
+performance en precisión o recall la determinarán finalmente condiciones de
+negocio, según cuál sea el peor tipo de error: ¿ignorar a un cliente que no va a
+volver? ¿O enviar un mensaje o promoción a un cliente que iba a volver a comprar
+de todos modos? Si ajustando parámetros no es posible mejorar las métricas,
+entonces se intenta con otros algoritmos como por ejemplo árboles de decisión o
+máquinas de soporte vectorial (*support vector machines*, SVM). En la práctica,
+uno nunca se queda con un único algoritmo; siempre se consideran varias
+opciones.
+
+
+## Validación
+
+Para saber si tenemos un buen modelo, además de evaluar la performance sobre
+ciertas métricas de calidad (que, recordemos, deberían elegirse al comienzo del
+proyecto) tenemos que validar que el modelo generalice bien, para evitar lo que
+se denomina *overfitting*. Si el modelo se "memoriza" los datos de entrenamiento
+en lugar de detectar las tendencias importantes, el modelo funcionará muy bien
+al evaluarlo en los datos de entrenamiento pero cometerá errores graves al
+exponerlo a datos nuevos.
+
+Para evitar este problema se necesita validar la performance del modelo sobre
+datos nunca antes vistos. Obviamente no tenemos (todavía) datos del futuro,
+pero podemos "simular" los mismos separando al azar los datos que tenemos en dos
+conjuntos: uno de **entrenamiento** y otro llamado de **prueba** o
+**validación**. El modelo se entrena usando únicamente el conjunto de datos de
+entrenamiento, y las métricas se evalúan usando el conjunto de datos de prueba.
+Si la performance del modelo sobre este último conjunto es satisfactoria,
+podemos considerar que el modelo generaliza bien a datos futuros.
+
+Hasta este punto hemos usado todos los datos disponibles para construir nuestros
+modelos. En la práctica, siempre se particionan los datos como mínimo en los dos
+conjuntos antes mencionados. Repitamos el ejercicio actual dividiendo los datos
+en un conjunto de entrenamiento y otro de validación:
+
+```{r}
+# Generamos un índice al azar para separar los datos
+# La función set.seed es para que la secuencia aleatoria sea reproducible
+set.seed(534381)
+
+# Particionar los datos usando un vector auxiliar de ceros y unos
+# Vamos a asignar 2/3 de los datos a entrenamiento, y 1/3 a prueba
+dfchurn$isTrain <- rbinom(nrow(dfchurn), 1, 0.66)
+dftrain <- subset(dfchurn, dfchurn$isTrain == 1)
+dftest <- subset(dfchurn, dfchurn$isTrain == 0)
+
+# Construimos un modelo basado sólo en los datos de entrenamiento
+modeloLogit2 <- glm(returnCustomer ~ title + newsletter + websiteDesign +
+                        paymentMethod + couponDiscount + purchaseValue + 
+                        shippingFees + dvd + blueray + vinyl + videogame +
+                        videogameDownload + prodRemitted + prodSecondHand,
+                    family=binomial, data=dftrain)
+
+# Generamos las predicciones, pero usando los datos de prueba
+dftest$predNuevo <- predict(modeloLogit2, type="response", newdata=dftest)
+```
+
+Calculemos ahora la matriz de confusión para las predicciones sobre los datos
+de prueba, y veamos cómo dan las métricas:
+
+```{r}
+matrizConf <- confusion.matrix(dftest$returnCustomer, dftest$predNuevo,
+                               threshold=0.5)
+
+# Precisión
+prec <- matrizConf[4] / (matrizConf[2]+matrizConf[4])
+print(prec)
+```
+
+```{r}
+rec <- matrizConf[4] / (matrizConf[3] + matrizConf[4])
+print(rec)
+```
+
+
+# Clustering
+
+El tercer y último caso que veremos como ejemplo es un caso de
+**análisis de grupos** o *clustering*, que es un problema de
+**aprendizaje no supervisado**. En este tipo de problemas no existe una variable
+objetivo a predecir. Lo que se busca, en cambio, es descubrir patrones dentro de
+los datos. Los resultados de métodos no supervisados, en general, no son un fin
+en sí mismos; son formas de encontrar relaciones y patrones que se pueden usar
+para luego construir modelos predictivos. De hecho, es útil considerar a los
+métodos no supervisados como herramientas para el análisis exploratorio de
+datos.
+
+En el caso del clustering, el objetivo es agrupar las observaciones en grupos o
+*clusters* de manera tal que cada punto en un cluster es más "parecido" a otros
+puntos del mismo cluster que a cualquier punto del resto de los datos. Existen
+varios algoritmos para encontrar clusters; en este ejemplo usaremos el método
+conocido como **K-means**.
+
+El algoritmo K-means es bastante popular ya que es sencillo de implementar. En
+primer lugar, necesitamos definir qué entendemos por "estar cerca" o "estar
+lejos" en términos de una **distancia**. K-means se aplica cuando los datos son
+todos numéricos, y se usa la **distancia euclidiana**: si cada punto de 
+datos consiste en $N$ variables, la distancia euclidiana $D$ entre dos puntos
+$x_1$ y $x_2$ está dada por
+
+$$ D = \sqrt{\sum_{i=1}^N (x_{1,i} - x_{2,i})^2}$$
+
+Ésta es la definición usual de distancia geométrica, pero hay otras opciones
+posibles como por ejemplo la distancia de Hamming, la distancia de Manhattan o
+la distancia coseno (también llamada *cosine similarity*).
+
+El método K-means también tiene desventajas, a saber: es necesario elegir de
+antemano el número de clusters $K$, funciona mejor si los datos son una mezcla
+de distribuciones gaussianas, y puede ser bastante inestable (esto es, los
+clusters finales pueden dependen mucho de las condiciones iniciales). Los pasos
+del algoritmo son los siguientes:
+
+1. Primero se eligen, dentro del espacio de los datos, $K$ centros al azar.
+2. Para todos los puntos en los datos, se calcula la distancia a cada uno de los
+$K$ centros.
+3. Cada dato se asigna al centro más cercano, formando así los clusters.
+4. Una vez asignados todos los puntos a alguno de los $K$ clusters, se recalcula
+el centro de cada uno de los clusters.
+5. Repetir los pasos 2 a 4 hasta que los centros queden estables, o se cumpla un
+cierto número prefijado de iteraciones.
+
+Veamos ahora un ejemplo de aplicación.
+
+
+## Consumo de proteínas
+
+En el ejemplo que consideraremos, el objetivo es agrupar 25 países de Europa
+según sus patrones de consumo de proteína de distintos orígenes (animal y
+vegetal). Los datos están disponibles en el archivo `protein.txt` en el
+directorio `data` y fueron tomados en los años '70 del siglo pasado (por eso
+verán en la lista países como Alemania Oriental o la Unión Soviética). El
+archivo de datos es un archivo de texto pero donde las columnas están separadas
+por tabulaciones, no por comas, por lo que usamos una función distinta para
+cargar los datos.
+
+```{r}
+proteina <- read.table("data/protein.txt", sep="\t", header=TRUE)
+```
+
+Veamos estadísticas básicas de los datos:
+
+```{r}
+summary(proteina)
+```
+
+
+### Las unidades importan
+
+Disparidad en las unidades de medida de los datos es un factor que afecta
+significativamente qué agrupaciones son detectadas por el algoritmo de
+clustering. A los fines de este ejemplo no nos importa qué significan
+exactamente los números en los datos (son algún tipo de medida del consumo de
+proteínas) pero es posible que las distintas columnas no estén en las mismas
+unidades de medida. Si los valores y los rangos son muy disímiles entre sí, es
+posible que los clusters en el espacio de los datos queden muy "estirados"; esto
+introduce el riesgo de que el algoritmo junte artificialmente cosas que deberían
+estar separadas, o que separe cosas que deberían estar juntas.
+
+Este problema se puede evitar asegurándose que las distintas columnas de datos
+abarquen rangos numéricos similares. Una solución habitual para lograr esto es
+**normalizar** los datos, de manera que cada columna tenga una media de 0 y una
+desviación estándar de 1. Esto se hace de la siguiente manera:
+
+1. Para cada columna, calcular el promedio y la desviación estándar.
+2. Para cada dato en cada columna, restarle el promedio y dividir el resultado
+por la desviación estándar.
+
+Este procedimiento convierte a la desviación estándar en la unidad de medida
+para cada columna. Suponiendo que los datos de entrenamiento son representativos
+de la población en general, una desviación estándar representa aproximadamente
+el mismo nivel de diferencia en cada coordenada.
+
+El siguiente bloque de código realiza la normalización de los datos que tenemos.
+Por suerte, la función `scale()` se encarga del proceso:
+
+```{r}
+# Sacamos la primera columna de la normalización (los nombres de países)
+var_pred <- colnames(proteina)[-1]
+
+# Normalizar los datos y guardarlos en una matriz
+pmatriz <- scale(proteina[, var_pred])
+
+# La función scale() agrega dos atributos: 
+#  - scaled:center los promedios de las columnas
+#  - scaled:scale las desviaciones estándar
+pcentros <- attr(pmatriz, "scaled:center")
+pescalas <- attr(pmatriz, "scaled:scale")
+```
+
+Para entrenar un modelo K-means se usa la función `kmeans()` del paquete `stats`
+(incluido en R base). La salida de esta función incluye etiquetas de clusters,
+centros de los clusters y diversas métricas de evaluación que tienen que ver con
+la distancia media entre miembros de un cluster, distancia media entre centros
+de clusters, etc. El algoritmo no garantiza un punto final unívoco, por lo cual
+es buena práctica correrlo varias veces con distintas condiciones iniciales y
+finalmente elegir de entre todos los resultados el clustering con mejores
+métricas.
+
+```{r}
+# Correr kmeans() con 5 clusters, 100 condiciones iniciales aleatorias, y un
+# máximo de 100 iteraciones por cada corrida
+pclusters <- kmeans(pmatriz, 5, nstart=100, iter.max=100)
+```
+
+La función `summary()` puede usarse para obtener información sobre el
+clustering, pero no es muy informativa.
+
+```{r}
+summary(pclusters)
+```
+
+`pclusters$centers` es una matriz cuyas filas son los centros de los clusters en
+las coordenadas normalizadas. `pclusters$size` devuelve la cantidad de puntos
+(países, en este caso) en cada cluster.
+
+```{r}
+pclusters$centers
+pclusters$size
+```
+
+Veamos los clusters que se han generado. En el bloque de código de abajo se 
+define una función de conveniencia, `imprimir_clusters()`, para listar los
+países en un cluster más otra información adicional.
+
+```{r}
+grupos <- pclusters$cluster
+
+# Función para listar los países en un cluster,
+# junto con algunos valores
+imprimir_clusters <- function(etiq, i) {
+    print(paste("Cluster", i))
+    print(proteina[etiq==i, c("Country", "RedMeat","Fish","Fr.Veg")])
+}
+```
+
+```{r, echo=FALSE}
+imprimir_clusters(grupos, 1)
+imprimir_clusters(grupos, 2)
+imprimir_clusters(grupos, 3)
+imprimir_clusters(grupos, 4)
+imprimir_clusters(grupos, 5)
+```
+
+## Elegir el número de clusters
+
+Como mencionamos antes, un problema de K-means es que hay que elegir $K$ de
+antemano. ¿Y cómo sabemos qué valor usar? A veces podemos usar conocimiento
+previo de negocio para elegir un valor inicial, pero nos gustaría tener un
+método más cualitativo para determinar esto. Una opción es calcular lo que se
+denomina la **suma cuadrática interna total** (*total within sum of squares*,
+WSS) para diferentes valores de $K$ y buscar un "codo" en la curva resultante.
+
+Se define el *centro* de un cluster como el punto que es el valor medio de todos
+los puntos del cluster. La WSS para un cluster particular es la distancia
+cuadrática media entre cada punto del cluster y el centro del mismo. La WSS
+total es la suma de todas las WSS de los clusters.
+
+```{r}
+# Distancia cuadrática entre dos puntos
+sqr_edist <- function(x, y) {
+    sum((x-y)^2)
+}
+
+# Calcular WSS para un cluster
+wss.cluster <- function(clustermat) {
+    c0 <- apply(clustermat, 2, FUN=mean)
+    sum(apply(clustermat, 1, FUN=function(row) { sqr_edist(row,c0) }))
+}
+
+# Calcular WSS total
+wss.total <- function(dmatrix,etiq) {
+    wsstot <- 0
+    k <- length(unique(etiq))
+    for (i in 1:k)
+        wsstot <- wsstot + wss.cluster(
+            subset(dmatrix, labels==i))
+    wsstot
+}
+```
+
+La WSS total decrece a medida que aumenta el número de clusters, ya que cada
+cluster será más pequeño y denso. Lo que se espera es que la tasa de
+decrecimiento de la WSS se haga más lenta para valores de $K$ mayores al 
+número óptimo de clusters, generando un "codo". La desventaja de este método es
+que, en la práctica, el "codo" puede no ser muy evidente.
+
+Otra opción es calcular lo que se conoce como **índice de Calinski-Harabasz**, 
+la razón entre la varianza entre clusters (la varianza de todos los centros
+respecto al centro global de los datos) y la varianza intra-cluster total (la
+WSS promedio de los clusters).
+
+Para un conjunto de datos dado, la **suma cuadrática total**
+(*total sum of squares*, TSS) es la distancia cuadrática de todos los puntos de
+datos al centro global. Es independiente del clustering. Si WSS($k$) es la WSS
+total para un clustering con $K$ clusters, la **suma cuadrática entre clusters**
+(*between sum of squares*, BSS) está dada por
+
+$$\text{BSS}(K) = \text{TSS} - \text{WSS}(K)$$
+
+Un buen clustering debería tener WSS($K$) pequeño y BSS($K$) grande. Las
+varianzas intra-cluster $W$ y entre clusters $B$ están dadas, respectivamente,
+por
+
+$$W = \frac{\text{WSS}(k)}{n - k}$$
+
+$$B = \frac{\text{BSS}(k)}{k - 1}$$
+
+donde $n$ es el número de puntos en el conjunto de datos. $W$ decrece y $B$
+crece a medida que aumenta $k$, pero la tasa de cambio debería disminuir más
+allá del valor óptimo de $k$ - en teoría, la razón entre $B$ y $W$ debería
+maximizarse en el $k$ óptimo.
+
+El siguiente código calcula y grafica estos índices, con el objetivo de
+determinar el valor óptimo del número de clusters $K$.
+
+```{r}
+# Calcular la suma cuadrática total
+sctot <- function(dmatrix) {
+    mediaglobal <- apply(dmatrix, 2, mean)
+    sum(apply(dmatrix, 1, FUN=function(row) {
+        sqr_edist(row, mediaglobal) }))
+}
+
+# Función para calcular el índice C-H para un número de clusters
+# de 1 a kmax
+criterio_ch <- function(dmatrix, kmax) {
+    npts <- dim(dmatrix)[1]
+    
+    # Esto es independiente del clustering
+    sct <- sctot(dmatrix)
+    
+    wss <- numeric(kmax)
+    crit <- numeric(kmax)
+    
+    # WSS para k=1 (corresponde a la suma cuadrática total)
+    wss[1] <- (npts-1)*sum(apply(dmatrix, 2, var))
+    for (k in 2:kmax) {
+        clustering <- kmeans(dmatrix, k, nstart=10, iter.max=100)
+        wss[k] <- clustering$tot.withinss
+    }
+    
+    bss <- sct - wss
+    crit.num <- bss/(0:(kmax-1))
+    crit.denom <- wss/(npts- 1:kmax)
+    list(crit=crit.num/crit.denom, wss=wss, totss=sct)
+}
+```
+
+```{r, fig.width=12, warning=FALSE}
+clustcrit <- criterio_ch(pmatriz, 10)
+critframe <- data.frame(K=1:10, ch=scale(clustcrit$crit),
+                        wss=scale(clustcrit$wss))
+critframe <- melt(critframe, id.vars=c("K"), variable.name="Medida",
+                  value.name="Puntaje")
+
+ggplot(critframe, aes(x=K, y=Puntaje, color=Medida)) +
+    geom_point(aes(shape=Medida)) +
+    geom_line(aes(linetype=Medida)) +
+    scale_x_continuous(breaks=1:10, labels=1:10) +
+    theme(axis.text=element_text(size=16),
+                     axis.title=element_text(size=16),
+                     plot.title=element_text(size=20))
+```
+
+Como se mencionó antes, es difícil ver dónde está el "codo"; sin embargo, más o
+menos puede verse que la disminución del puntaje es más importante entre $K$ = 1
+y $K$ = 4 o 5, y que más allá de esos valores la ganancia es menor.
+
+
+## Puntos importantes sobre clustering
+
+- El objetivo del clustering es descubrir similitudes entre subconjuntos de los
+datos.
+- En un buen clustering, los puntos del mismo cluster deberían parecerse más
+entre ellos que a puntos de cualquier otro cluster.
+- Las unidades en que se miden las variables predictoras importan. Unidades
+diferentes generan distancias diferentes y, potencialmente, diferentes
+clusterings.
+- Idealmente se quiere que un cambio unitario en una coordenada represente el
+mismo nivel de cambio. Una forma de lograr esto es normalizar (esto es, 
+transformarlos de modo tal que tengan media 0 y desviación estándar 1).
+- Clustering en general es exploratorio y precursor de métodos de aprendizaje
+supervisado.
+- Es más iterativo e interactivo y menos automatizado que métodos supervisados.
+- Diferentes algoritmos de clustering dan resultados distintos. Considerar
+distintos enfoques, con diferentes números de clusters.
+- Hay muchos estimadores para calcular el número de clusters necesario.
+Nuevamente, considerar distintas posibilidades.
